@@ -1,5 +1,6 @@
 package main
 
+import shader "../shaders"
 import sapp "../sokol-odin/sokol/app"
 import sg "../sokol-odin/sokol/gfx"
 import shelpers "../sokol-odin/sokol/helpers"
@@ -8,6 +9,14 @@ import "core:log"
 
 
 default_context: runtime.Context
+
+Globals :: struct {
+	shader:        sg.Shader,
+	pipeline:      sg.Pipeline,
+	vertex_buffer: sg.Buffer,
+}
+
+g: ^Globals
 
 main :: proc() {
 	context.logger = log.create_console_logger()
@@ -39,13 +48,46 @@ init_cb :: proc "c" () {
 			logger = sg.Logger(shelpers.logger(&default_context)),
 		},
 	)
+
+	g = new(Globals)
+	g.shader = sg.make_shader(shader.main_shader_desc(sg.query_backend()))
+	g.pipeline = sg.make_pipeline(
+		{
+			shader = g.shader,
+			layout = {
+				attrs = {
+					shader.ATTR_main_pos = {format = .FLOAT2},
+					shader.ATTR_main_col = {format = .FLOAT4},
+				},
+			},
+		},
+	)
+
+	Vertex_Data :: struct {
+		pos: [2]f32,
+		col: sg.Color,
+	}
+
+	vertices := []Vertex_Data {
+		{pos = {-0.3, -0.3}, col = {1, 0, 0, 1}},
+		{pos = {0, 0.3}, col = {0, 1, 0, 1}},
+		{pos = {0.3, -0.3}, col = {0, 0, 1, 1}},
+	}
+
+	g.vertex_buffer = sg.make_buffer(
+		{data = {ptr = raw_data(vertices), size = len(vertices) * size_of(vertices[0])}},
+	)
 }
 
 frame_cb :: proc "c" () {
 	context = default_context
 
 	sg.begin_pass({swapchain = shelpers.glue_swapchain()})
-	// TODO: draw
+
+	sg.apply_pipeline(g.pipeline)
+	sg.apply_bindings({vertex_buffers = {0 = g.vertex_buffer}})
+
+	sg.draw(0, 3, 1)
 
 	sg.end_pass()
 	sg.commit()
@@ -54,6 +96,10 @@ frame_cb :: proc "c" () {
 cleanup_cb :: proc "c" () {
 	context = default_context
 
+	sg.destroy_buffer(g.vertex_buffer)
+	sg.destroy_pipeline(g.pipeline)
+	sg.destroy_shader(g.shader)
+	free(g)
 	sg.shutdown()
 }
 
