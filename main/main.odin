@@ -14,6 +14,7 @@ Globals :: struct {
 	shader:        sg.Shader,
 	pipeline:      sg.Pipeline,
 	vertex_buffer: sg.Buffer,
+	index_buffer:  sg.Buffer,
 }
 
 g: ^Globals
@@ -60,6 +61,7 @@ init_cb :: proc "c" () {
 					shader.ATTR_main_col = {format = .FLOAT4},
 				},
 			},
+			index_type = .UINT16,
 		},
 	)
 
@@ -68,15 +70,17 @@ init_cb :: proc "c" () {
 		col: sg.Color,
 	}
 
+	indices := []u16{0, 1, 2, 1, 2, 3}
+
 	vertices := []Vertex_Data {
 		{pos = {-0.3, -0.3}, col = {1, 0, 0, 1}},
-		{pos = {0, 0.3}, col = {0, 1, 0, 1}},
-		{pos = {0.3, -0.3}, col = {0, 0, 1, 1}},
+		{pos = {0.3, -0.3}, col = {0, 1, 0, 1}},
+		{pos = {-0.3, 0.3}, col = {0, 0, 1, 1}},
+		{pos = {0.3, 0.3}, col = {0, 0, 1, 1}},
 	}
 
-	g.vertex_buffer = sg.make_buffer(
-		{data = {ptr = raw_data(vertices), size = len(vertices) * size_of(vertices[0])}},
-	)
+	g.vertex_buffer = sg.make_buffer({data = sg_range(vertices)})
+	g.index_buffer = sg.make_buffer({data = sg_range(indices), type = .INDEXBUFFER})
 }
 
 frame_cb :: proc "c" () {
@@ -85,9 +89,9 @@ frame_cb :: proc "c" () {
 	sg.begin_pass({swapchain = shelpers.glue_swapchain()})
 
 	sg.apply_pipeline(g.pipeline)
-	sg.apply_bindings({vertex_buffers = {0 = g.vertex_buffer}})
+	sg.apply_bindings({vertex_buffers = {0 = g.vertex_buffer}, index_buffer = g.index_buffer})
 
-	sg.draw(0, 3, 1)
+	sg.draw(0, 6, 1)
 
 	sg.end_pass()
 	sg.commit()
@@ -97,6 +101,7 @@ cleanup_cb :: proc "c" () {
 	context = default_context
 
 	sg.destroy_buffer(g.vertex_buffer)
+	sg.destroy_buffer(g.index_buffer)
 	sg.destroy_pipeline(g.pipeline)
 	sg.destroy_shader(g.shader)
 	free(g)
@@ -106,4 +111,8 @@ cleanup_cb :: proc "c" () {
 event_cb :: proc "c" (ev: ^sapp.Event) {
 	context = default_context
 	log.debug(ev.type)
+}
+
+sg_range :: proc(s: []$T) -> sg.Range {
+	return {ptr = raw_data(s), size = len(s) * size_of(s[0])}
 }
