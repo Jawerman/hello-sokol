@@ -1,11 +1,15 @@
+// tutorial continue (https://youtu.be/PYL4csZiaU8?list=PLI3kBEQ3yd-CAdFlkYILzmB_RXrePqNcg&t=946)
 package main
 
 import shader "../shaders"
 import sapp "../sokol-odin/sokol/app"
 import sg "../sokol-odin/sokol/gfx"
 import shelpers "../sokol-odin/sokol/helpers"
+import types "../types"
+import "base:intrinsics"
 import "base:runtime"
 import "core:log"
+import "core:math/linalg"
 import stbi "vendor:stb/image"
 
 
@@ -60,7 +64,7 @@ init_cb :: proc "c" () {
 			shader = g.shader,
 			layout = {
 				attrs = {
-					shader.ATTR_main_pos = {format = .FLOAT2},
+					shader.ATTR_main_pos = {format = .FLOAT3},
 					shader.ATTR_main_col = {format = .FLOAT4},
 					shader.ATTR_main_uv = {format = .FLOAT2},
 				},
@@ -70,9 +74,10 @@ init_cb :: proc "c" () {
 	)
 
 	Vec2 :: [2]f32
+	Vec3 :: [3]f32
 
 	Vertex_Data :: struct {
-		pos: Vec2,
+		pos: Vec3,
 		col: sg.Color,
 		uv:  Vec2,
 	}
@@ -82,10 +87,10 @@ init_cb :: proc "c" () {
 	WHITE :: sg.Color{1, 1, 1, 1}
 
 	vertices := []Vertex_Data {
-		{pos = {-0.3, -0.3}, col = WHITE, uv = {0, 0}},
-		{pos = {0.3, -0.3}, col = WHITE, uv = {1, 0}},
-		{pos = {-0.3, 0.3}, col = WHITE, uv = {0, 1}},
-		{pos = {0.3, 0.3}, col = WHITE, uv = {1, 1}},
+		{pos = {-0.3, -0.3, -1}, col = WHITE, uv = {0, 0}},
+		{pos = {0.3, -0.3, -1}, col = WHITE, uv = {1, 0}},
+		{pos = {-0.3, 0.3, -1}, col = WHITE, uv = {0, 1}},
+		{pos = {0.3, 0.3, -1}, col = WHITE, uv = {1, 1}},
 	}
 
 	g.vertex_buffer = sg.make_buffer({data = sg_range(vertices)})
@@ -111,7 +116,18 @@ init_cb :: proc "c" () {
 frame_cb :: proc "c" () {
 	context = default_context
 
+	proj: types.Mat4 = linalg.matrix4_perspective_f32(
+		70,
+		sapp.widthf() / sapp.heightf(),
+		0.001,
+		1000,
+	)
+
 	sg.begin_pass({swapchain = shelpers.glue_swapchain()})
+
+	vs_params := shader.Vs_Params {
+		mvp = proj,
+	}
 
 	sg.apply_pipeline(g.pipeline)
 	sg.apply_bindings(
@@ -123,6 +139,7 @@ frame_cb :: proc "c" () {
 		},
 	)
 
+	sg.apply_uniforms(shader.UB_vs_params, sg_range(&vs_params))
 	sg.draw(0, 6, 1)
 
 	sg.end_pass()
@@ -147,6 +164,15 @@ event_cb :: proc "c" (ev: ^sapp.Event) {
 	log.debug(ev.type)
 }
 
-sg_range :: proc(s: []$T) -> sg.Range {
+sg_range :: proc {
+	sg_range_from_struct,
+	sg_range_from_slices,
+}
+
+sg_range_from_struct :: proc(s: ^$T) -> sg.Range where intrinsics.type_is_struct(T) {
+	return {ptr = s, size = size_of(T)}
+}
+
+sg_range_from_slices :: proc(s: []$T) -> sg.Range {
 	return {ptr = raw_data(s), size = len(s) * size_of(s[0])}
 }
