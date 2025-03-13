@@ -1,4 +1,3 @@
-// tutorial continue (https://youtu.be/PYL4csZiaU8?list=PLI3kBEQ3yd-CAdFlkYILzmB_RXrePqNcg&t=946)
 package main
 
 import shader "../shaders"
@@ -14,6 +13,7 @@ import stbi "vendor:stb/image"
 
 
 default_context: runtime.Context
+ROTATION_SPEED :: 90
 
 Globals :: struct {
 	shader:        sg.Shader,
@@ -22,6 +22,7 @@ Globals :: struct {
 	index_buffer:  sg.Buffer,
 	image:         sg.Image,
 	sampler:       sg.Sampler,
+	rotation:      f32,
 }
 
 g: ^Globals
@@ -87,10 +88,10 @@ init_cb :: proc "c" () {
 	WHITE :: sg.Color{1, 1, 1, 1}
 
 	vertices := []Vertex_Data {
-		{pos = {-0.3, -0.3, -1}, col = WHITE, uv = {0, 0}},
-		{pos = {0.3, -0.3, -1}, col = WHITE, uv = {1, 0}},
-		{pos = {-0.3, 0.3, -1}, col = WHITE, uv = {0, 1}},
-		{pos = {0.3, 0.3, -1}, col = WHITE, uv = {1, 1}},
+		{pos = {-0.3, -0.3, 0}, col = WHITE, uv = {0, 0}},
+		{pos = {0.3, -0.3, 0}, col = WHITE, uv = {1, 0}},
+		{pos = {-0.3, 0.3, 0}, col = WHITE, uv = {0, 1}},
+		{pos = {0.3, 0.3, 0}, col = WHITE, uv = {1, 1}},
 	}
 
 	g.vertex_buffer = sg.make_buffer({data = sg_range(vertices)})
@@ -116,17 +117,18 @@ init_cb :: proc "c" () {
 frame_cb :: proc "c" () {
 	context = default_context
 
-	proj: types.Mat4 = linalg.matrix4_perspective_f32(
-		70,
-		sapp.widthf() / sapp.heightf(),
-		0.001,
-		1000,
-	)
+	dt := f32(sapp.frame_duration())
+	g.rotation += linalg.to_radians(ROTATION_SPEED * dt)
+
+	p: types.Mat4 = linalg.matrix4_perspective_f32(70, sapp.widthf() / sapp.heightf(), 0.001, 1000)
+	m :=
+		linalg.matrix4_translate_f32({0.0, 0.0, -1.5}) *
+		linalg.matrix4_from_yaw_pitch_roll_f32(g.rotation, 0.0, 0.0)
 
 	sg.begin_pass({swapchain = shelpers.glue_swapchain()})
 
 	vs_params := shader.Vs_Params {
-		mvp = proj,
+		mvp = p * m,
 	}
 
 	sg.apply_pipeline(g.pipeline)
