@@ -1,3 +1,4 @@
+// continue from [here](https://youtu.be/8ZCxFL6N7zU?t=1507)
 package main
 
 import shader "../shaders"
@@ -8,6 +9,7 @@ import types "../types"
 import "base:intrinsics"
 import "base:runtime"
 import "core:log"
+import "core:math"
 import "core:math/linalg"
 import stbi "vendor:stb/image"
 
@@ -23,6 +25,11 @@ Globals :: struct {
 	image:         sg.Image,
 	sampler:       sg.Sampler,
 	rotation:      f32,
+	camera:        struct {
+		position: types.Vec3,
+		target:   types.Vec3,
+		look:     types.Vec2,
+	},
 }
 
 g: ^Globals
@@ -31,7 +38,6 @@ main :: proc() {
 	context.logger = log.create_console_logger()
 	default_context = context
 
-	log.debug("hello, sokol!")
 
 	sapp.run(
 		{
@@ -50,6 +56,7 @@ main :: proc() {
 
 init_cb :: proc "c" () {
 	context = default_context
+
 	sg.setup(
 		{
 			environment = shelpers.glue_environment(),
@@ -58,7 +65,15 @@ init_cb :: proc "c" () {
 		},
 	)
 
+	sapp.show_mouse(false)
+	sapp.lock_mouse(true)
+
 	g = new(Globals)
+
+	g.camera = {
+		position = {0, 0, 2},
+		target   = {0, 0, 1},
+	}
 	g.shader = sg.make_shader(shader.main_shader_desc(sg.query_backend()))
 	g.pipeline = sg.make_pipeline(
 		{
@@ -74,13 +89,11 @@ init_cb :: proc "c" () {
 		},
 	)
 
-	Vec2 :: [2]f32
-	Vec3 :: [3]f32
 
 	Vertex_Data :: struct {
-		pos: Vec3,
+		pos: types.Vec3,
 		col: sg.Color,
-		uv:  Vec2,
+		uv:  types.Vec2,
 	}
 
 	indices := []u16{0, 1, 2, 1, 2, 3}
@@ -117,18 +130,27 @@ init_cb :: proc "c" () {
 frame_cb :: proc "c" () {
 	context = default_context
 
-	dt := f32(sapp.frame_duration())
-	g.rotation += linalg.to_radians(ROTATION_SPEED * dt)
+	if key_down[.ESCAPE] {
+		sapp.quit()
+		return
+	}
 
+	dt := f32(sapp.frame_duration())
+
+	update_camera(dt)
+
+	// g.rotation += linalg.to_radians(ROTATION_SPEED * dt)
 	p: types.Mat4 = linalg.matrix4_perspective_f32(70, sapp.widthf() / sapp.heightf(), 0.001, 1000)
 	m :=
-		linalg.matrix4_translate_f32({0.0, 0.0, -1.5}) *
+		linalg.matrix4_translate_f32({0.0, 0.0, 0.0}) *
 		linalg.matrix4_from_yaw_pitch_roll_f32(g.rotation, 0.0, 0.0)
+
+	v := linalg.matrix4_look_at_f32(g.camera.position, g.camera.target, types.Vec3{0, 1, 0})
 
 	sg.begin_pass({swapchain = shelpers.glue_swapchain()})
 
 	vs_params := shader.Vs_Params {
-		mvp = p * m,
+		mvp = p * v * m,
 	}
 
 	sg.apply_pipeline(g.pipeline)
@@ -146,6 +168,8 @@ frame_cb :: proc "c" () {
 
 	sg.end_pass()
 	sg.commit()
+
+	mouse_move = types.Vec2{0, 0}
 }
 
 cleanup_cb :: proc "c" () {
@@ -161,9 +185,52 @@ cleanup_cb :: proc "c" () {
 	sg.shutdown()
 }
 
+mouse_move: types.Vec2
+key_down: #sparse[sapp.Keycode]bool
+
 event_cb :: proc "c" (ev: ^sapp.Event) {
 	context = default_context
-	log.debug(ev.type)
+
+	#partial switch ev.type {
+	case .MOUSE_MOVE:
+		mouse_move += {-ev.mouse_dx, -ev.mouse_dy}
+	case .KEY_DOWN:
+		key_down[ev.key_code] = true
+	case .KEY_UP:
+		key_down[ev.key_code] = false
+	}
+}
+
+MOVE_SPEED :: 3
+LOOK_SENSITIVITY :: 0.05
+
+update_camera :: proc(dt: f32) {
+	move_input: types.Vec2
+
+	if key_down[.W] do move_input.y = 1
+	else if key_down[.S] do move_input.y = -1
+	if key_down[.D] do move_input.x = 1
+	else if key_down[.A] do move_input.x = -1
+
+	look_input: types.Vec2 = mouse_move * LOOK_SENSITIVITY
+	g.camera.look += look_input
+	g.camera.look.x = math.wrap(g.camera.look.x, 360)
+	g.camera.look.y = math.clamp(g.camera.look.y, -90, 90)
+
+	look_mat := linalg.matrix4_from_yaw_pitch_roll_f32(
+		linalg.to_radians(g.camera.look.x),
+		linalg.to_radians(g.camera.look.y),
+		0,
+	)
+
+	forward := (look_mat * types.Vec4{0, 0, -1, 1}).xyz
+	right := (look_mat * types.Vec4{1, 0, 0, 1}).xyz
+
+	move_dir := forward * move_input.y + right * move_input.x
+	motion := linalg.normalize0(move_dir) * MOVE_SPEED * dt
+
+	g.camera.position += motion
+	g.camera.target = g.camera.position + forward
 }
 
 sg_range :: proc {
